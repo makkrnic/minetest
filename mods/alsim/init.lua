@@ -1,8 +1,25 @@
 math.randomseed(os.time())
+local mod_storage = minetest.get_mod_storage()
+local stats = {
+  plants_count = 0,
+}
+
+minetest.register_chatcommand("get_stats", {
+  params = "param",
+  func = function(name, param)
+    minetest.chat_send_all("stats for "..param..": "..stats[param])
+  end
+})
 
 minetest.register_node("alsim:plant", {
   tiles = {"alsim_plant.png"},
   groups = {snappy=1,choppy=2,flammable=3,falling_node=1,oddly_breakable_by_hand=3},
+  on_construct = function(pos)
+    stats.plants_count = stats.plants_count + 1
+  end,
+  on_destruct = function(pos)
+    stats.plants_count = stats.plants_count - 1
+  end,
 })
 
 minetest.register_abm({
