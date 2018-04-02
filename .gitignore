@@ -40,7 +40,6 @@ gtags.files
 !/textures/base/
 /screenshots
 /sounds
-/mods/*
 !/mods/minetest/
 /mods/minetest/*
 !/mods/minetest/mods_here.txt
