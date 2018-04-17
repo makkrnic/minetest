@@ -3,18 +3,26 @@ local mod_storage = minetest.get_mod_storage()
 local stats
 
 function init()
-  local tmpStats = minetest.deserialize(mod_storage:get_string("stats"))
-  if tmpStats == nil then
-    tmpStats = {
-      plants_count = 0,
-      carnivores_count = 0,
-      herbivores_count = 0,
-    }
-  else
-    if tmpStats["plants_count"] == nil then tmpStats["plants_count"] = 0 end
-    if tmpStats["carnivores_count"] == nil then tmpStats["carnivores_count"] = 0 end
-    if tmpStats["herbivores_count"] == nil then tmpStats["herbiivores_count"] = 0 end
-  end
+  -- local tmpStats = minetest.deserialize(mod_storage:get_string("stats"))
+  -- if tmpStats == nil then
+  --   tmpStats = {
+  --     plants_count = 0,
+  --     carnivores_count = 0,
+  --     herbivores_count = 0,
+  --   }
+  -- else
+  --   if tmpStats["plants_count"] == nil then tmpStats["plants_count"] = 0 end
+  --   if tmpStats["carnivores_count"] == nil then tmpStats["carnivores_count"] = 0 end
+  --   if tmpStats["herbivores_count"] == nil then tmpStats["herbiivores_count"] = 0 end
+  -- end
+  local tmpStats = {
+    herbivores_count = 0,
+    carnivores_count = 0,
+  }
+
+  local pc = mod_storage:get_int("plants_count")
+  if pc == nil then pc = 0 end
+  tmpStats["plants_count"] = pc
 
   stats = tmpStats
 end
@@ -84,4 +92,24 @@ minetest.register_abm({
     minetest.set_node(pos, {name = "alsim:plant"})
     minetest.check_for_falling(pos)
   end
+})
+
+minetest.register_entity("alsim:herbivore", {
+  textures = {"alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png"},
+  visual = "cube",
+  on_activate = function()
+    stats_update("herbivores_count", 1)
+  end,
+  on_destroy = function()
+    stats_update("herbivores_count", -1)
+  end,
+})
+
+minetest.register_craftitem("alsim:herbivore", {
+  description = "herbivore",
+  inventory_image = "alsim_herbivore.png",
+  on_place = function(itemstack, place, pointed_thing)
+    minetest.env:add_entity(pointed_thing.above, "alsim:herbivore")
+    return itemstack
+  end,
 })
