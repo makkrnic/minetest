@@ -163,11 +163,18 @@ minetest.register_abm({
 minetest.register_entity("alsim:herbivore", {
   textures = {"alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png"},
   visual = "cube",
-  on_activate = function()
-    stats_update("herbivores_count", 1)
+  on_activate = function(self, staticdata)
+    local sd = minetest.deserialize(staticdata)
+    if sd == nil or not sd.counted then
+      stats_update("herbivores_count", 1)
+      self.counted = true
+    end
   end,
-  on_destroy = function()
+  on_death = function()
     stats_update("herbivores_count", -1)
+  end,
+  get_staticdata = function()
+    return minetest.serialize({counted = true})
   end,
 })
 
