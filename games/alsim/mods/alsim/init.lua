@@ -29,13 +29,79 @@ end
 
 init()
 
+local player
+local huds = {}
+
+minetest.register_on_joinplayer(function(the_player)
+  player = the_player
+  local stats_hud_title = player:hud_add({
+    hud_elem_type = "text",
+    position      = {x = 1,    y = 0.05},
+    offset        = {x = -100, y = 0},
+    alignment     = {x = 0,    y = 0},
+    scale         = {x = 100,  y = 100},
+    number        = 0xFFFFFF,
+    text          = "Stats",
+  })
+
+  local stats_hud_plants = player:hud_add({
+    hud_elem_type = "text",
+    position      = {x = 1,    y = 0.05},
+    offset        = {x = -150, y = 20},
+    alignment     = -1,
+    scale         = {x = 100,  y = 100},
+    number        = 0xFFFFFF,
+    text          = "Plants: "..stats["plants_count"],
+  })
+  huds["plants_count"] = stats_hud_plants
+
+  local stats_hud_herbivores = player:hud_add({
+    hud_elem_type = "text",
+    position      = {x = 1,    y = 0.05},
+    offset        = {x = -150, y = 40},
+    alignment     = -1,
+    scale         = {x = 100,  y = 100},
+    number        = 0xFFFFFF,
+    text          = "Herbivores: "..stats["herbivores_count"],
+  })
+  huds["herbivores_count"] = stats_hud_herbivores
+
+  local stats_hud_carnivores = player:hud_add({
+    hud_elem_type = "text",
+    position      = {x = 1,    y = 0.05},
+    offset        = {x = -150, y = 60},
+    alignment     = -1,
+    scale         = {x = 100,  y = 100},
+    number        = 0xFFFFFF,
+    text          = "Carnivores: "..stats["carnivores_count"],
+  })
+  huds["carnivores_count"] = stats_hud_carnivores
+end)
+
+function update_hud(player)
+  if huds["plants_count"] ~= nil then
+    player:hud_change(huds["plants_count"], "text", "Plants: "..stats["plants_count"])
+  end
+
+  if huds["herbivores_count"] ~= nil then
+    player:hud_change(huds["herbivores_count"], "text", "Herbivores: "..stats["herbivores_count"])
+  end
+
+  if huds["carnivores_count"] ~= nil then
+    player:hud_change(huds["carnivores_count"], "text", "Carnivores: "..stats["carnivores_count"])
+  end
+end
 
 function stats_update(what, change)
   if stats[what] == nil then stats[what] = 0 end
 
   stats[what] = stats[what] + change
 
-  mod_storage:set_string("stats", minetest.serialize(stats))
+  if what == "plants_count" then
+    mod_storage:set_int("plants_count", stats[what])
+  end
+
+  update_hud(player)
 end
 
 minetest.register_chatcommand("get_stats", {
