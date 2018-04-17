@@ -35,6 +35,7 @@ gtags.files
 /bin/
 /games/*
 !/games/minimal/
+!/games/alsim/
 /cache
 /textures/*
 !/textures/base/
