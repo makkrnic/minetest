@@ -261,6 +261,11 @@ minetest.register_entity("alsim:herbivore", {
       end
     end
   end,
+
+  die = function(self)
+    self.on_death()
+    self.object:remove()
+  end
 })
 
 minetest.register_craftitem("alsim:herbivore", {
