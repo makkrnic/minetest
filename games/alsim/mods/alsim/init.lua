@@ -212,6 +212,9 @@ function atan2(x, y)
   end
 end
 
+local passive_energy_consumption = 0.001
+local walking_energy_consumption = 0.4
+
 minetest.register_entity("alsim:herbivore", {
   textures = {"alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png"},
   visual = "cube",
@@ -219,6 +222,10 @@ minetest.register_entity("alsim:herbivore", {
   physical = true,
   automatic_rotation = 0.1,
   automatic_face_movement_dir = 0.0,
+
+  -- New entities will have energy 500. Maximum is 1000, and when
+  -- 0 is reached, they die.
+  energy = 500.0,
 
   _counted = false,
   on_activate = function(self, staticdata)
@@ -236,6 +243,8 @@ minetest.register_entity("alsim:herbivore", {
   state = "stand",
   target = nil,
   on_step = function(self, dtime)
+    self.energy = self.energy - passive_energy_consumption
+
     local rn = math.random(1, 1000)
 
     if self.state == "stand" then
@@ -259,6 +268,12 @@ minetest.register_entity("alsim:herbivore", {
         local z = math.cos(yaw) * 5
         self.object:setvelocity({x = x, y = self.object:getvelocity().y, z = z})
       end
+
+      self.energy = self.energy - walking_energy_consumption
+    end
+
+    if self.energy <= 0 then
+      self:die()
     end
   end,
 
