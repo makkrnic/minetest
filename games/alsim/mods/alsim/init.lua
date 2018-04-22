@@ -34,6 +34,13 @@ local huds = {}
 
 minetest.register_on_joinplayer(function(the_player)
   player = the_player
+
+  local privs = minetest.get_player_privs(player:get_player_name())
+  privs["fly"] = true
+  privs["give"] = true
+  privs["fast"] = true
+  minetest.set_player_privs(player:get_player_name(), privs)
+
   local stats_hud_title = player:hud_add({
     hud_elem_type = "text",
     position      = {x = 1,    y = 0.05},
