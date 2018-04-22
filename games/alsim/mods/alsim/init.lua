@@ -209,14 +209,17 @@ function atan2(x, y)
     return math.pi/2
   elseif x == 0 and y < 0 then
     return -math.pi/2
+  else
+    return 0
   end
 end
 
 local passive_energy_consumption = 0.001
 local walking_energy_consumption = 0.4
+local jumping_energy_consumption = 3
 
 minetest.register_entity("alsim:herbivore", {
-  textures = {"alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png"},
+  textures = {"alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore_front.png"},
   visual = "cube",
   collisionbox = {-0.49, -0.49, -0.49, 0.49, 0.49, 0.49, 0.49},
   physical = true,
@@ -244,6 +247,7 @@ minetest.register_entity("alsim:herbivore", {
   target = nil,
   on_step = function(self, dtime)
     self.energy = self.energy - passive_energy_consumption
+    self.object:setacceleration({x = 0, y = -10, z = 0})
 
     local rn = math.random(1, 1000)
 
@@ -260,13 +264,21 @@ minetest.register_entity("alsim:herbivore", {
       if self.target ~= nil then
         local sp = self.object:getpos()
         local vec = {x=self.target.x-sp.x, y=self.target.y-sp.y, z=self.target.z-sp.z}
-        local yaw = atan2(vec.x, vec.z)
+        local yaw = atan2(vec.x, vec.z) + math.pi/2
 
         self.object:setyaw(yaw)
 
-        local x = math.sin(yaw) * -5
-        local z = math.cos(yaw) * 5
+        local x = math.sin(yaw) * 5
+        local z = math.cos(yaw) * -5
         self.object:setvelocity({x = x, y = self.object:getvelocity().y, z = z})
+      end
+
+      local v = self.object:getvelocity()
+      if rn < 50 and v.y == 0 then
+        -- jump
+        v.y = 5
+        self.object:setvelocity(v)
+        self.energy = self.energy - jumping_energy_consumption
       end
 
       self.energy = self.energy - walking_energy_consumption
@@ -285,7 +297,7 @@ minetest.register_entity("alsim:herbivore", {
 
 minetest.register_craftitem("alsim:herbivore", {
   description = "herbivore",
-  inventory_image = "alsim_herbivore.png",
+  inventory_image = "alsim_herbivore_front.png",
   on_place = function(itemstack, place, pointed_thing)
     minetest.env:add_entity(pointed_thing.above, "alsim:herbivore")
     return itemstack
