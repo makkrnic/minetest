@@ -167,17 +167,17 @@ minetest.register_abm({
   end
 })
 
-function pick_random_target(pos, max_distance) -- 1/2 Manhattan distance
+function pick_random_target(pos, max_distance, max_y_distance) -- 1/2 Manhattan distance
   new_pos = pos
   new_pos.x = pos.x - max_distance + (2 * math.random(1, max_distance))
   new_pos.z = pos.z - max_distance + (2 * math.random(1, max_distance))
 
-  -- only choose target not higher/lower than max_distance
+  -- only choose target not higher/lower than max_y_distance
   local target_node
   --while true do
-    local i = 0
+    local i = -max_y_distance
     while true do
-      if i > max_distance then
+      if i > max_y_distance then
         break
       end
 
@@ -218,6 +218,24 @@ local passive_energy_consumption = 0.001
 local walking_energy_consumption = 0.4
 local jumping_energy_consumption = 3
 
+local herbivore_view_distance = 10
+
+function find_nodes_around(pos, distance, nodenames)
+  local minp = {
+    x = pos.x - distance,
+    y = pos.y - distance,
+    z = pos.z - distance,
+  }
+
+  local maxp = {
+    x = pos.x + distance,
+    y = pos.y + distance,
+    z = pos.z + distance,
+  }
+
+  return minetest.find_nodes_in_area(minp, maxp, nodenames)
+end
+
 minetest.register_entity("alsim:herbivore", {
   textures = {"alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore.png", "alsim_herbivore_front.png"},
   visual = "cube",
@@ -228,7 +246,7 @@ minetest.register_entity("alsim:herbivore", {
 
   -- New entities will have energy 500. Maximum is 1000, and when
   -- 0 is reached, they die.
-  energy = 500.0,
+  energy = 400.0,
 
   _counted = false,
   on_activate = function(self, staticdata)
@@ -245,6 +263,30 @@ minetest.register_entity("alsim:herbivore", {
 
   state = "stand",
   target = nil,
+  hunt_target = nil,
+
+  pick_hunt_target = function(self)
+    local huntable = find_nodes_around(self.object:getpos(), herbivore_view_distance, {"alsim:plant"})
+    if table.getn(huntable) == 0 then
+      self.target = pick_random_target(self.object:getpos(), 20, 5)
+    else
+      local selfpos = self.object:getpos()
+      for _, pos in pairs(huntable) do
+        direct, blocking = minetest.line_of_sight(selfpos, pos, 1)
+
+        -- minetest.chat_send_all("Direct: "..minetest.serialize(direct))
+        -- minetest.chat_send_all("pos2 : "..minetest.serialize(pos))
+        -- minetest.chat_send_all("Block: "..minetest.serialize(blocking))
+        if direct or blocking.x == pos.x and blocking.y == pos.y and blocking.z == pos.z then
+          minetest.chat_send_all("Picking hunt target")
+          self.hunt_target = pos
+          self.target = pos
+          break
+        end
+      end
+    end
+  end,
+
   on_step = function(self, dtime)
     self.energy = self.energy - passive_energy_consumption
     self.object:setacceleration({x = 0, y = -10, z = 0})
@@ -252,25 +294,15 @@ minetest.register_entity("alsim:herbivore", {
     local rn = math.random(1, 1000)
 
     if self.state == "stand" then
-      if rn <= 30 then
-        self.state = "walk"
-        self.target = pick_random_target(self.object:getpos(), 40)
-      end
-    elseif self.state == "walk" then
-      if rn <= 3 then
-        self.state = "stand"
-      end
-
+    elseif self.state == "wander" or self.state == "hunt" and self.hunt_target == nil then
       if self.target ~= nil then
-        local sp = self.object:getpos()
-        local vec = {x=self.target.x-sp.x, y=self.target.y-sp.y, z=self.target.z-sp.z}
-        local yaw = atan2(vec.x, vec.z) + math.pi/2
-
-        self.object:setyaw(yaw)
-
-        local x = math.sin(yaw) * 5
-        local z = math.cos(yaw) * -5
-        self.object:setvelocity({x = x, y = self.object:getvelocity().y, z = z})
+        local dist = vector.distance(self.object:getpos(), self.target)
+        if dist < 2.0 then
+          self.state = "stand"
+          self.target = nil
+        else
+          self:advance_towards_target()
+        end
       end
 
       local v = self.object:getvelocity()
@@ -282,11 +314,51 @@ minetest.register_entity("alsim:herbivore", {
       end
 
       self.energy = self.energy - walking_energy_consumption
+    elseif self.state == "hunt" then
+      minetest.chat_send_all("hunting")
+      self:advance_towards_target()
     end
 
     if self.energy <= 0 then
       self:die()
     end
+
+    self:decide_next_action()
+  end,
+
+  decide_next_action = function(self)
+    minetest.chat_send_all("energy: "..self.energy)
+    if self.energy <= 400 then
+      self.state = "hunt"
+      minetest.chat_send_all("hunt target: "..minetest.serialize(self.hunt_target))
+      if self.hunt_target == nil then
+        self:pick_hunt_target()
+      else
+        local target_node = minetest.get_node_or_nil(self.hunt_target)
+        if target_node == nil or target_node.name ~= "alsim:plant" then
+          self:pick_hunt_target()
+        end
+      end
+    else
+      local rn = math.random(1, 1000)
+
+      if rn <= 30 then
+        self.state = "wander"
+        self.target = pick_random_target(self.object:getpos(), 40, 5)
+      end
+    end
+  end,
+
+  advance_towards_target = function(self)
+    local sp = self.object:getpos()
+    local vec = {x=self.target.x-sp.x, y=self.target.y-sp.y, z=self.target.z-sp.z}
+    local yaw = atan2(vec.x, vec.z) + math.pi/2
+
+    self.object:setyaw(yaw)
+
+    local x = math.sin(yaw) * 5
+    local z = math.cos(yaw) * -5
+    self.object:setvelocity({x = x, y = self.object:getvelocity().y, z = z})
   end,
 
   die = function(self)
