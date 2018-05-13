@@ -218,6 +218,8 @@ local passive_energy_consumption = 0.001
 local walking_energy_consumption = 0.4
 local jumping_energy_consumption = 3
 
+local energy_in_plant = 500
+
 local herbivore_view_distance = 10
 
 function find_nodes_around(pos, distance, nodenames)
@@ -268,7 +270,10 @@ minetest.register_entity("alsim:herbivore", {
   pick_hunt_target = function(self)
     local huntable = find_nodes_around(self.object:getpos(), herbivore_view_distance, {"alsim:plant"})
     if table.getn(huntable) == 0 then
-      self.target = pick_random_target(self.object:getpos(), 20, 5)
+      if self.target == nil then
+        self.target = pick_random_target(self.object:getpos(), 20, 5)
+      end
+      return nil
     else
       local selfpos = self.object:getpos()
       for _, pos in pairs(huntable) do
@@ -285,6 +290,8 @@ minetest.register_entity("alsim:herbivore", {
         end
       end
     end
+
+    return self.target
   end,
 
   on_step = function(self, dtime)
@@ -296,8 +303,7 @@ minetest.register_entity("alsim:herbivore", {
     if self.state == "stand" then
     elseif self.state == "wander" or self.state == "hunt" and self.hunt_target == nil then
       if self.target ~= nil then
-        local dist = vector.distance(self.object:getpos(), self.target)
-        if dist < 2.0 then
+        if self:target_reached() then
           self.state = "stand"
           self.target = nil
         else
@@ -314,6 +320,16 @@ minetest.register_entity("alsim:herbivore", {
       end
 
       self.energy = self.energy - walking_energy_consumption
+    elseif self.state == "eat" then
+      if self.hunt_target ~= nil then
+        local target_node = minetest.get_node_or_nil(self.hunt_target)
+        if target_node ~= nil and target_node.name == "alsim:plant"then
+          -- minetest.dig_node(self.hunt_target)
+          minetest.remove_node(self.hunt_target)
+          self.energy = self.energy + energy_in_plant
+          self:go_to_state("wander")
+        end
+      end
     elseif self.state == "hunt" then
       minetest.chat_send_all("hunting")
       self:advance_towards_target()
@@ -328,23 +344,58 @@ minetest.register_entity("alsim:herbivore", {
 
   decide_next_action = function(self)
     minetest.chat_send_all("energy: "..self.energy)
-    if self.energy <= 400 then
-      self.state = "hunt"
-      minetest.chat_send_all("hunt target: "..minetest.serialize(self.hunt_target))
-      if self.hunt_target == nil then
-        self:pick_hunt_target()
-      else
-        local target_node = minetest.get_node_or_nil(self.hunt_target)
-        if target_node == nil or target_node.name ~= "alsim:plant" then
-          self:pick_hunt_target()
-        end
-      end
+    if self.state == "hunt" and self:target_reached() then
+      self:go_to_state("eat")
+    elseif self.state == "eat" and self.hunt_target == nil then
+      -- how did this happen
+      self:go_to_state("hunt")
+    elseif self.energy <= 400 then
+      self:go_to_state("hunt")
     else
       local rn = math.random(1, 1000)
 
       if rn <= 30 then
-        self.state = "wander"
-        self.target = pick_random_target(self.object:getpos(), 40, 5)
+        self:go_to_state("wander")
+      end
+    end
+  end,
+
+  target_reached = function(self, tolerance)
+    if tolerance == nil then
+      tolerance = 0.1
+    end
+
+    if self.target == nil then
+      return false
+    end
+
+    local dist = vector.distance(self.object:getpos(), self.target)
+    return dist < (tolerance + 1)
+  end,
+
+  go_to_state = function(self, target_state)
+    if target_state == "hunt" then
+      -- check if the target somehow got removed (eaten)
+      local target_node = nil
+      if self.state == "hunt" and target_node ~= nil then
+        target_node = minetest.get_node_or_nil(self.hunt_target)
+      end
+
+      -- if needed, pick a new hunt target
+      if self.state ~= "hunt" or target_node == nil or target_node.name ~= "alsim:plant" then
+        if self:pick_hunt_target() == nil then
+          -- no huntables found, wander
+          self:go_to_state("wander")
+        else
+          self.state = "hunt"
+        end
+      end
+    elseif target_state == "wander" and self.state ~= "wander" then
+      self.target = pick_random_target(self.object:getpos(), 40, 5)
+      self.state = "wander"
+    elseif target_state == "eat" then
+      if self.state ~= "eat" then
+        self.state = "eat"
       end
     end
   end,
