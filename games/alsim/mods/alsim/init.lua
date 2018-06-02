@@ -114,7 +114,7 @@ end
 minetest.register_chatcommand("get_stats", {
   func = function(name, param)
     for ent,count in pairs(stats) do
-      minetest.chat_send_all("stats for "..ent..": "..count)
+      print("stats for "..ent..": "..count)
     end
   end
 })
@@ -298,7 +298,7 @@ minetest.register_entity("alsim:herbivore", {
   end,
 
   pick_hunt_target = function(self)
-    minetest.chat_send_all('picking hunt target...')
+    print('picking hunt target...')
     local huntable = find_nodes_around(self.object:getpos(), herbivore_view_distance, {"alsim:plant"})
     if table.getn(huntable) == 0 then
       if self.target == nil then
@@ -310,11 +310,11 @@ minetest.register_entity("alsim:herbivore", {
       for _, pos in pairs(huntable) do
         direct, blocking = minetest.line_of_sight(selfpos, pos, 1)
 
-        -- minetest.chat_send_all("Direct: "..minetest.serialize(direct))
-        -- minetest.chat_send_all("pos2 : "..minetest.serialize(pos))
-        -- minetest.chat_send_all("Block: "..minetest.serialize(blocking))
+        -- print("Direct: "..minetest.serialize(direct))
+        -- print("pos2 : "..minetest.serialize(pos))
+        -- print("Block: "..minetest.serialize(blocking))
         if direct or blocking.x == pos.x and blocking.y == pos.y and blocking.z == pos.z then
-          --minetest.chat_send_all("Picking hunt target")
+          --print("Picking hunt target")
           self:set_hunt_target(pos)
           break
         end
@@ -322,6 +322,13 @@ minetest.register_entity("alsim:herbivore", {
     end
 
     return self.target
+  end,
+
+  jump = function(self)
+    local v = self.object:getvelocity()
+    v.y = 5
+    self.object:setvelocity(v)
+    self.energy = self.energy - jumping_energy_consumption
   end,
 
   on_step = function(self, dtime)
@@ -341,14 +348,6 @@ minetest.register_entity("alsim:herbivore", {
         end
       end
 
-      local v = self.object:getvelocity()
-      if rn < 50 and v.y == 0 then
-        -- jump
-        v.y = 5
-        self.object:setvelocity(v)
-        self.energy = self.energy - jumping_energy_consumption
-      end
-
       self.energy = self.energy - walking_energy_consumption
     elseif self.state == "eat" then
       if self.hunt_target ~= nil then
@@ -361,7 +360,7 @@ minetest.register_entity("alsim:herbivore", {
         end
       end
     elseif self.state == "hunt" then
-      --minetest.chat_send_all("hunting")
+      --print("hunting")
       self:advance_towards_target()
     end
 
@@ -393,7 +392,7 @@ minetest.register_entity("alsim:herbivore", {
   end,
 
   decide_next_action = function(self)
-    --minetest.chat_send_all("energy: "..self.energy)
+    --print("energy: "..self.energy)
     if self.state == "hunt" and self:target_reached() then
       self:go_to_state("eat")
     elseif self.state == "eat" and self.hunt_target == nil then
@@ -456,7 +455,7 @@ minetest.register_entity("alsim:herbivore", {
       print('target: '..pretty(target_node))
       print('current state: '..pretty(self.state))
       if self.state ~= "hunt" or target_node == nil or target_node.name ~= "alsim:plant" then
-        minetest.chat_send_all('started hunting')
+        print('started hunting')
         if self:pick_hunt_target() == nil then
           -- no huntables found, wander
           self:go_to_state("wander")
@@ -488,6 +487,10 @@ minetest.register_entity("alsim:herbivore", {
     local x = math.sin(yaw) * 5
     local z = math.cos(yaw) * -5
     self.object:setvelocity({x = x, y = self.object:getvelocity().y, z = z})
+
+    if vec.y > 0.2 then
+      self:jump()
+    end
   end,
 
   die = function(self)
