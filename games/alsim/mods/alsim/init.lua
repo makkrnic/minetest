@@ -7,6 +7,8 @@ local passive_energy_consumption = 0.001
 local walking_energy_consumption = 0.4
 local jumping_energy_consumption = 3
 
+local plants_count_cap = 15000
+
 local energy_in_plant = 500
 
 local herbivore_view_distance = 10
@@ -14,6 +16,8 @@ local herbivore_view_distance = 10
 local herbivore_force_hunt_threshold = 400
 local herbivore_force_mate_threshold = 700
 
+local not_moving_threshold = 2
+local not_moving_tick_threshold = 200
 
 function init()
   -- local tmpStats = minetest.deserialize(mod_storage:get_string("stats"))
@@ -117,11 +121,14 @@ function stats_update(what, change)
 
   stats[what] = stats[what] + change
 
+  -- only plants count should be saved as other types (herbivores and carnivores)
+  -- are (re)counted on initialization
   if what == "plants_count" then
     mod_storage:set_int("plants_count", stats[what])
   end
 
   update_hud(player)
+  print(minetest.write_json(stats))
 end
 
 minetest.register_chatcommand("get_stats", {
@@ -149,6 +156,10 @@ minetest.register_abm({
   interval = 10.0,
   chance = 10,
   action = function(pos, node, active_object_count, active_object_count_wider)
+    -- check if plants count cap has been reached
+    if plants_count_cap ~= 0 and stats.plants_count >= plants_count_cap then
+      return
+    end
     -- x offset
     pos.x = pos.x + (math.floor(math.random() * 100) % 11) - 5
     -- y offset
@@ -256,7 +267,9 @@ minetest.register_entity("alsim:herbivore", {
   energy = 400.0,
 
   _counted = false,
+  previous_pos = nil,
   on_activate = function(self, staticdata)
+    self.previous_pos = self.object:getpos()
     if not self._counted then
       stats_update("herbivores_count", 1)
       self._counted = true
@@ -267,8 +280,13 @@ minetest.register_entity("alsim:herbivore", {
   on_death = function(self)
     stats_update("herbivores_count", -1)
     self.dead = true
+    if self.target_mate ~= nil then
+      self.target_mate.target_mate = nil
+      self.target_mate = nil
+    end
   end,
 
+  not_moving_tick_count = 0,
   dead = false,
   state = "stand",
   target = nil,
@@ -317,6 +335,7 @@ minetest.register_entity("alsim:herbivore", {
       if self.target == nil then
         self:set_target(pick_random_target(self.object:getpos(), 20, 5))
       end
+      self.force_wander = 100
       return nil
     else
       local selfpos = self.object:getpos()
@@ -410,6 +429,17 @@ minetest.register_entity("alsim:herbivore", {
       self:die()
     end
 
+    local current_pos = self.object:getpos()
+
+    if math.abs(vector.distance(self.previous_pos, current_pos)) < not_moving_threshold then
+      self.not_moving_tick_count = self.not_moving_tick_count + 1
+    else
+      self.not_moving_tick_count = 0
+    end
+
+    self.previous_pos = current_pos
+
+
     self:decide_next_action()
   end,
 
@@ -424,6 +454,11 @@ minetest.register_entity("alsim:herbivore", {
   end,
 
   decide_next_action = function(self)
+    if self.not_moving_tick_count > not_moving_tick_threshold then
+      self.force_wander = 30
+      self.not_moving_tick_count = 0
+    end
+
     --print("energy: "..self.energy)
     if self.force_wander > 0 then
       self.force_wander = self.force_wander - 1
@@ -435,9 +470,12 @@ minetest.register_entity("alsim:herbivore", {
       self:go_to_state("hunt")
     elseif self.energy <= 400 then
       self:go_to_state("hunt")
+    elseif self.state == "hunt" and self.energy < 8000 then
+      self:go_to_state("hunt")
     elseif self.energy > herbivore_force_mate_threshold  then
       self:go_to_state("find_mate")
     elseif self.state == "find_mate" and (self.target_mate == nil or self.target_mate.dead)  then
+      print('target mate died')
       self:go_to_state("wander")
     elseif self.state == "find_mate" and self:target_reached() then
       self:go_to_state("mate")
@@ -555,8 +593,10 @@ minetest.register_entity("alsim:herbivore", {
       end
     elseif target_state == "find_mate" then
       if not self:find_mate() then
-        print('unable to find mate. wandering for a bit...')
-        self.force_wander = 20
+        -- print('unable to find mate. wandering for a bit...')
+        print('unable to find mate. eating instead...')
+        -- self.force_wander = 20
+        self.state = "hunt"
       else
         self.state = "find_mate"
         self:set_target(nil)
