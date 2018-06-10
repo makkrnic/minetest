@@ -6,18 +6,39 @@ local stats
 local passive_energy_consumption = 0.001
 local walking_energy_consumption = 0.4
 local jumping_energy_consumption = 3
+local herbivore_speed = 5
+
+local carnivore_passive_energy_consumption = 0.1
+local carnivore_walking_energy_consumption = 1
+local carnivore_jumping_energy_consumption = 5
+local carnivore_speed = 6
 
 local plants_count_cap = 15000
 
 local energy_in_plant = 500
+local energy_in_herbivore = 800
 
 local herbivore_view_distance = 10
+local carnivore_view_distance = 10
 
 local herbivore_force_hunt_threshold = 400
 local herbivore_force_mate_threshold = 700
 
+local carnivore_force_hunt_threshold = 400
+local carnivore_force_mate_threshold = 700
+
 local not_moving_threshold = 2
 local not_moving_tick_threshold = 200
+
+local initial_plants_count = 200
+local initial_herbivores_count = 30
+local initial_carnivores_count = 10
+
+
+-- debugging overrides
+-- initial_plants_count = 0
+-- initial_herbivores_count = 0
+-- initial_carnivores_count = 0
 
 function init()
   -- local tmpStats = minetest.deserialize(mod_storage:get_string("stats"))
@@ -46,6 +67,81 @@ end
 
 init()
 
+
+local file = io.open(os.time() .. "_stats.json", "w")
+file:write("{")
+minetest.register_on_shutdown(function()
+  file:write("}")
+end)
+
+local time_index = 0
+
+function stats_write()
+  time_index = time_index + 1
+  file:write(time_index .. ": " .. minetest.write_json(stats) .. ",\n")
+  file:flush()
+  minetest.after(1.0, stats_write)
+end
+
+minetest.after(1.0, stats_write)
+
+local first_gen = mod_storage:get_int("agents_spawned")
+
+local map_top = 45
+
+local gen_min = -30
+local gen_max = 45
+
+if first_gen ~= 1 then
+  minetest.after(3.0, function()
+    print('creating plants')
+    local plants_generated = 0
+    while plants_generated < initial_plants_count do
+      local x = (math.floor(math.random() * 100000) % (gen_max - gen_min)) + gen_min
+      local z = (math.floor(math.random() * 100000) % (gen_max - gen_min)) + gen_min
+
+      local pos = {x = x, y = map_top, z = z}
+
+      minetest.set_node(pos, {name = "alsim:plant"})
+      minetest.check_for_falling(pos)
+
+      plants_generated = plants_generated + 1
+    end
+
+    minetest.after(3.0, function()
+      print('creating agents')
+      local herbivores_generated = 0
+      while herbivores_generated < initial_herbivores_count do
+        local x = (math.floor(math.random() * 100000) % (gen_max - gen_min)) + gen_min
+        local z = (math.floor(math.random() * 100000) % (gen_max - gen_min)) + gen_min
+
+        local pos = {x = x, y = map_top, z = z}
+
+        minetest.add_entity(pos, "alsim:herbivore")
+
+        herbivores_generated = herbivores_generated + 1
+      end
+
+      minetest.after(3.0, function()
+        print('creating carnivores')
+        local carnivores_generated = 0
+        while carnivores_generated < initial_carnivores_count do
+          local x = (math.floor(math.random() * 100000) % (gen_max - gen_min)) + gen_min
+          local z = (math.floor(math.random() * 100000) % (gen_max - gen_min)) + gen_min
+
+          local pos = {x = x, y = map_top, z = z}
+
+          minetest.add_entity(pos, "alsim:carnivore")
+
+          carnivores_generated = carnivores_generated + 1
+        end
+      end)
+    end)
+  end)
+end
+
+mod_storage:set_int("agents_spawned", 1)
+
 local player
 local huds = {}
 
@@ -54,6 +150,7 @@ minetest.register_on_joinplayer(function(the_player)
 
   local privs = minetest.get_player_privs(player:get_player_name())
   privs["fly"] = true
+  privs["noclip"] = true
   privs["give"] = true
   privs["fast"] = true
   minetest.set_player_privs(player:get_player_name(), privs)
@@ -150,6 +247,17 @@ minetest.register_node("alsim:plant", {
   end,
 })
 
+-- minetest.register_ore({
+-- 	ore_type       = "scatter",
+-- 	ore            = "alsim:plant",
+-- 	wherein        = "default:dirt_with_grass",
+-- 	clust_scarcity = 10 * 10 * 20,
+-- 	clust_num_ores = 8,
+-- 	clust_size     = 3,
+-- 	y_min          = -31000,
+-- 	y_max          = 31000,
+-- })
+
 minetest.register_abm({
   name = "alsim_plant_reproduction",
   nodenames = {"alsim:plant"},
@@ -192,7 +300,7 @@ minetest.register_abm({
 })
 
 function pick_random_target(pos, max_distance, max_y_distance) -- 1/2 Manhattan distance
-  new_pos = pos
+  local new_pos = pos
   new_pos.x = pos.x - max_distance + (2 * math.random(1, max_distance))
   new_pos.z = pos.z - max_distance + (2 * math.random(1, max_distance))
 
@@ -307,7 +415,7 @@ minetest.register_entity("alsim:herbivore", {
       --     path = minetest.find_path(self.object:getpos(), alt_target, 2 * herbivore_view_distance, 1, 1, 'A*')
       --   end
       --   if path ~= nil then
-          self.path = path
+          -- self.path = path
           self.target = target
       --     self.path_step_index = 1
       --   else
@@ -340,7 +448,7 @@ minetest.register_entity("alsim:herbivore", {
     else
       local selfpos = self.object:getpos()
       for _, pos in pairs(huntable) do
-        direct, blocking = minetest.line_of_sight(selfpos, pos, 1)
+        local direct, blocking = minetest.line_of_sight(selfpos, pos, 1)
 
         if direct or blocking.x == pos.x and blocking.y == pos.y and blocking.z == pos.z then
           self:set_hunt_target(pos)
@@ -413,7 +521,6 @@ minetest.register_entity("alsim:herbivore", {
           child = child:get_luaentity()
           child.energy = child_energy
         end
-        print(pretty(child))
         self.target_mate:go_to_state("wander")
         self:go_to_state("wander")
       end
@@ -475,7 +582,7 @@ minetest.register_entity("alsim:herbivore", {
     elseif self.energy > herbivore_force_mate_threshold  then
       self:go_to_state("find_mate")
     elseif self.state == "find_mate" and (self.target_mate == nil or self.target_mate.dead)  then
-      print('target mate died')
+      self.target_mate = nil
       self:go_to_state("wander")
     elseif self.state == "find_mate" and self:target_reached() then
       self:go_to_state("mate")
@@ -594,7 +701,6 @@ minetest.register_entity("alsim:herbivore", {
     elseif target_state == "find_mate" then
       if not self:find_mate() then
         -- print('unable to find mate. wandering for a bit...')
-        print('unable to find mate. eating instead...')
         -- self.force_wander = 20
         self.state = "hunt"
       else
@@ -681,11 +787,423 @@ minetest.register_entity("alsim:herbivore", {
   end
 })
 
+minetest.register_entity("alsim:carnivore", {
+  textures = {"alsim_carnivore.png", "alsim_carnivore.png", "alsim_carnivore.png", "alsim_carnivore.png", "alsim_carnivore.png", "alsim_carnivore_front.png"},
+  visual = "cube",
+  collisionbox = {-0.499, -0.499, -0.499, 0.499, 0.499, 0.499, 0.499},
+  physical = true,
+  automatic_rotation = 0.1,
+  automatic_face_movement_dir = 0.0,
+
+  -- New entities will have energy 500. Maximum is 1000, and when
+  -- 0 is reached, they die.
+  energy = 800.0,
+
+  _counted = false,
+  previous_pos = nil,
+  on_activate = function(self, staticdata)
+    self.previous_pos = self.object:getpos()
+    if not self._counted then
+      stats_update("carnivores_count", 1)
+      self._counted = true
+    end
+
+    self.object:setacceleration({x = 0, y = -10, z = 0})
+  end,
+  on_death = function(self)
+    stats_update("carnivores_count", -1)
+    self.dead = true
+    if self.target_mate ~= nil then
+      self.target_mate.target_mate = nil
+      self.target_mate = nil
+    end
+  end,
+
+  not_moving_tick_count = 0,
+  dead = false,
+  state = "stand",
+  target = nil,
+  target_hunt = nil,
+  path = nil,
+  path_step_index = 1,
+  target_mate = nil,
+  force_wander = 0,
+
+  set_target = function(self, target)
+    -- dbg(self.path == nil)
+    if target ~= nil then
+      self.target = target
+    else
+      self.target = nil
+      self.target_hunt = nil
+    end
+  end,
+
+  set_hunt_target = function(self, target)
+    self.target_hunt = target
+    self:set_target(target)
+  end,
+
+  pick_hunt_target = function(self)
+    if self.target_hunt == nil then
+      local objects = minetest.get_objects_inside_radius(self.object:getpos(), 50)
+      local _, obj
+      for _, obj in ipairs(objects) do
+        if obj ~= nil then
+          local current = obj:get_luaentity()
+          if current ~= nil and current.name == "alsim:herbivore" then
+            self.target_hunt = current
+            return true
+          end
+        end
+      end
+    else
+      return true
+    end
+
+    return false
+  end,
+
+  jump = function(self)
+    local sp = self.object:getpos()
+    if not self.is_blocking({x = sp.x, y = sp.y - 1, z = sp.z}) then
+      return
+    end
+
+    local v = self.object:getvelocity()
+    v.y = 5
+    self.object:setvelocity(v)
+    self.energy = self.energy - carnivore_jumping_energy_consumption
+  end,
+
+  on_step = function(self, dtime)
+    self.energy = self.energy - carnivore_passive_energy_consumption
+    self.object:setacceleration({x = 0, y = -10, z = 0})
+
+    local rn = math.random(1, 1000)
+
+    if self.state == "stand" and rn < 300 then
+      self:go_to_state("wander")
+    elseif self.state == "wander" or self.state == "hunt" and self.target_hunt == nil then
+      if self.target ~= nil then
+        if self:target_reached() then
+          self.state = "stand"
+          self:set_target(nil)
+        else
+          self:advance_towards_target()
+        end
+      end
+
+      self.energy = self.energy - carnivore_walking_energy_consumption
+    elseif self.state == "eat" then
+      if self.target_hunt ~= nil then
+        -- minetest.dig_node(self.hunt_target)
+        if self.target_hunt.dead then
+          self.target_hunt = nil
+        else
+          self.target_hunt:die()
+          self.energy = self.energy + energy_in_herbivore
+        end
+        self:go_to_state("wander")
+      end
+    elseif self.state == "hunt" then
+      --print("hunting")
+      self:advance_towards_target()
+    elseif self.state == "find_mate" then
+      self:advance_towards_target()
+    elseif self.state == "mate" then
+      if self:target_reached() then
+        self:stop()
+
+        -- some energy is lost in reproduction
+        local child_energy = (self.energy + self.target_mate.energy) / 3.0
+        self.energy = self.energy / 3.0
+        self.target_mate.energy = self.target_mate.energy / 3.0
+
+        local pos = self.object:getpos()
+        pos.y = pos.y + 1
+        local child = minetest.add_entity(pos, self.name)
+        if child ~= nil then
+          child = child:get_luaentity()
+          child.energy = child_energy
+        end
+        self.target_mate:go_to_state("wander")
+        self:go_to_state("wander")
+      end
+    elseif self.state == "mate_passive" then
+      self:stop()
+    end
+
+    if self:step_reached() then
+      self:advance_step()
+    end
+
+    if self.energy <= 0 then
+      self:die()
+    end
+
+    local current_pos = self.object:getpos()
+
+    if math.abs(vector.distance(self.previous_pos, current_pos)) < not_moving_threshold then
+      self.not_moving_tick_count = self.not_moving_tick_count + 1
+    else
+      self.not_moving_tick_count = 0
+    end
+
+    self.previous_pos = current_pos
+
+
+    self:decide_next_action()
+  end,
+
+  advance_step = function(self)
+    if self.path ~= nil then
+      local steps_count = table.getn(self.path)
+
+      if self.path_step_index < steps_count then
+        self.path_step_index = self.path_step_index + 1
+      end
+    end
+  end,
+
+  decide_next_action = function(self)
+    if self.not_moving_tick_count > not_moving_tick_threshold then
+      self.force_wander = 30
+      self.not_moving_tick_count = 0
+    end
+
+    if self.force_wander > 0 then
+      self.force_wander = self.force_wander - 1
+      self:go_to_state("wander")
+    elseif self.state == "hunt" and self:target_reached() then
+      self:go_to_state("eat")
+    elseif self.state == "eat" and (self.target_hunt == nil or self.target_hunt.dead) then
+      self.target_hunt = nil
+      self:go_to_state("hunt")
+    elseif self.energy <= 400 then
+      self:go_to_state("hunt")
+    elseif self.state == "hunt" and self.energy < 8000 then
+      self:go_to_state("hunt")
+    elseif self.energy > carnivore_force_mate_threshold  then
+      self:go_to_state("find_mate")
+    elseif self.state == "find_mate" and (self.target_mate == nil or self.target_mate.dead)  then
+      self:go_to_state("wander")
+    elseif self.state == "find_mate" and self:target_reached() then
+      self:go_to_state("mate")
+    elseif self.state ~= "wander" then
+      self:go_to_state("wander")
+    end
+  end,
+
+  target_reached = function(self, tolerance)
+    if tolerance == nil then
+      tolerance = 1.0
+    end
+
+    local local_target = self.target
+    if self.target_mate ~= nil then
+      local_target = self.target_mate.object:getpos()
+    end
+
+    if self.target_hunt ~= nil then
+      local_target = self.target_hunt.object:getpos()
+    end
+
+    if local_target == nil then
+      return false
+    end
+
+    local dist = vector.distance(self.object:getpos(), local_target)
+    return dist < (tolerance + 1)
+  end,
+
+  step_reached = function(self, tolerance)
+    -- default values
+    if tolerance == nil then
+      tolerance = 0.1
+    end
+
+    local local_target = self.target
+    if self.path ~= nil then
+      local_target = self.path[self.path_step_index]
+    end
+
+    if local_target == nil then
+      return false
+    end
+
+    local dist = vector.distance(self.object:getpos(), local_target)
+    return dist < (tolerance + 1)
+  end,
+
+  find_mate = function(self)
+    if self.target_mate == nil then
+      local objects = minetest.get_objects_inside_radius(self.object:getpos(), 50)
+      local selected
+      local _, obj
+      for _, obj in ipairs(objects) do
+        if obj ~= nil then
+          local current = obj:get_luaentity()
+          if current ~= nil and current ~= self and current.name == self.name then
+            selected = current
+            self.target_mate = selected
+
+            if selected:receive_mate_call(self) then
+              return true
+            end
+          end
+        end
+      end
+    else
+      return true
+    end
+
+    return false
+  end,
+
+  receive_mate_call = function(self, other)
+    -- print('Received mate call from '..pretty(other))
+    if self.state == "wander" or (self.state == "find_mate" and (self.target_mate == nil or self.target_mate == other)) then
+      self.target_mate = other
+      self:go_to_state('find_mate')
+      return true
+    end
+
+    return false
+  end,
+
+  go_to_state = function(self, target_state)
+    if target_state ~= 'wander' then
+      self.force_wander = 0
+    end
+
+    if target_state == "hunt" then
+      -- check if the target somehow got removed (eaten)
+
+      -- if needed, pick a new hunt target
+      if self.state ~= "hunt" or self.target_hunt == nil or self.target_hunt.dead then
+        if self:pick_hunt_target() then
+          self.state = "hunt"
+        else
+          -- no huntables found, wander
+          self:go_to_state("wander")
+        end
+      end
+    elseif target_state == "wander" and self.state ~= "wander" then
+      self:set_target(pick_random_target(self.object:getpos(), 40, 5))
+      if self.target_mate ~= nil then
+        self.target_mate.target_mate = nil
+        self.target_mate = nil
+      end
+      self.state = "wander"
+    elseif target_state == "eat" then
+      if self.state ~= "eat" then
+        self.state = "eat"
+      end
+    elseif target_state == "find_mate" then
+      if not self:find_mate() then
+        -- print('unable to find mate. wandering for a bit...')
+        -- self.force_wander = 20
+        self.state = "hunt"
+      else
+        self.state = "find_mate"
+        self:set_target(nil)
+      end
+    elseif target_state == "mate" then
+      if self.target_mate ~= nil then
+        self.state = "mate"
+        self.target_mate:go_to_state("mate_passive")
+      end
+    elseif target_state == "mate_passive" then
+      self.state = "mate_passive"
+    end
+  end,
+
+  stop = function(self)
+    self.object:setvelocity({x = 0, y = self.object:getvelocity().y, z = 0})
+  end,
+
+  is_blocking = function(pos)
+    local n = minetest.get_node_or_nil(pos)
+    if n ~= nil and n.name ~= "air" then
+      return true
+    end
+    return false
+  end,
+
+  advance_towards_target = function(self)
+    local local_target = self.target
+    if self.target_mate ~= nil then
+      local_target = self.target_mate.object:getpos()
+    end
+
+    if self.target_hunt ~= nil then
+      local_target = self.target_hunt.object:getpos()
+    end
+
+    if self.path ~= nil then
+      local_target = self.path[self.path_step_index]
+    end
+
+    if local_target == nil then
+      return
+    end
+    local sp = self.object:getpos()
+    local vec = {x=local_target.x-sp.x, y=local_target.y-sp.y, z=local_target.z-sp.z}
+    local yaw = atan2(vec.x, vec.z) + math.pi/2
+
+    self.object:setyaw(yaw)
+
+
+    if   self.is_blocking({x = sp.x - 1, y = sp.y, z = sp.z})
+      or self.is_blocking({x = sp.x - 1, y = sp.y, z = sp.z - 1})
+      or self.is_blocking({x = sp.x - 1, y = sp.y, z = sp.z + 1})
+      or self.is_blocking({x = sp.x, y = sp.y, z = sp.z - 1})
+      or self.is_blocking({x = sp.x, y = sp.y, z = sp.z + 1})
+      or self.is_blocking({x = sp.x + 1, y = sp.y, z = sp.z})
+      or self.is_blocking({x = sp.x + 1, y = sp.y, z = sp.z - 1})
+      or self.is_blocking({x = sp.x + 1, y = sp.y, z = sp.z + 1}) then
+      self:jump()
+    end
+
+    local x = math.sin(yaw) *  carnivore_speed
+    local z = math.cos(yaw) * -carnivore_speed
+    self.object:setvelocity({x = x, y = self.object:getvelocity().y, z = z})
+
+    self.energy = self.energy - carnivore_walking_energy_consumption
+  end,
+
+  die = function(self)
+    self:on_death()
+    self.object:remove()
+  end,
+
+  on_punch = function(self)
+    minetest.chat_send_all(pretty(self))
+    print(pretty(self))
+  end,
+
+  on_rightclick = function(self)
+    minetest.chat_send_all(pretty(self))
+    print(pretty(self))
+    dbg()
+  end
+})
+
 minetest.register_craftitem("alsim:herbivore", {
   description = "herbivore",
   inventory_image = "alsim_herbivore_front.png",
   on_place = function(itemstack, place, pointed_thing)
     minetest.env:add_entity(pointed_thing.above, "alsim:herbivore")
+    return itemstack
+  end,
+})
+
+minetest.register_craftitem("alsim:carnivore", {
+  description = "carnivore",
+  inventory_image = "alsim_carnivore_front.png",
+  on_place = function(itemstack, place, pointed_thing)
+    minetest.env:add_entity(pointed_thing.above, "alsim:carnivore")
     return itemstack
   end,
 })
