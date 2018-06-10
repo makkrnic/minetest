@@ -389,7 +389,7 @@ minetest.register_entity("alsim:herbivore", {
 
         local pos = self.object:getpos()
         pos.y = pos.y + 1
-        local child = minetest.add_entity(pos, "alsim:herbivore")
+        local child = minetest.add_entity(pos, self.name)
         if child ~= nil then
           child = child:get_luaentity()
           child.energy = child_energy
