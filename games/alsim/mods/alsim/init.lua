@@ -383,11 +383,9 @@ minetest.register_entity("alsim:herbivore", {
         self:stop()
 
         -- some energy is lost in reproduction
-        local child_energy = self.energy / 3.0 + self.target_mate.energy / 3.0
+        local child_energy = (self.energy + self.target_mate.energy) / 3.0
         self.energy = self.energy / 3.0
         self.target_mate.energy = self.target_mate.energy / 3.0
-
-        child_energy = child_energy + self.target_mate.energy
 
         local pos = self.object:getpos()
         pos.y = pos.y + 1
@@ -396,6 +394,7 @@ minetest.register_entity("alsim:herbivore", {
           child = child:get_luaentity()
           child.energy = child_energy
         end
+        print(pretty(child))
         self.target_mate:go_to_state("wander")
         self:go_to_state("wander")
       end
