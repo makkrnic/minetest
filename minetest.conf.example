@@ -1532,6 +1532,7 @@
 #    Flags starting with 'no' are used to explicitly disable them.
 #    type: flags possible values: caves, dungeons, light, decorations, nocaves, nodungeons, nolight, nodecorations
 # mg_flags = caves,dungeons,light,decorations
+mg_flags = nocaves,nodungeons,light,decorations
 
 #    Whether dungeons occasionally project from the terrain.
 #    type: bool
